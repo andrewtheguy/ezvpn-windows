@@ -1,0 +1,135 @@
+<Project>
+
+  <!-- ==========================================================================
+       Native runtime DLL acquisition for Ezvpn.App.
+
+       Both DLLs are P/Invoke runtime dependencies, so they are NOT needed to
+       compile the solution — a failed/absent download never breaks the build,
+       it only means the app won't run (App.OnLaunched fails fast with a clear
+       message). They are staged into native\ (git-ignored) and copied into the
+       build and publish output.
+
+         ezvpn.dll  — the ezvpn Rust core C FFI. By default downloaded from a
+                      pinned ezvpn GitHub release (ezvpn-windows.dll.zip),
+                      verified by SHA256. This is the "reference the release zip
+                      directly, no local build" path, mirroring how ezvpn-apple
+                      pins the xcframework zip. Set EZVPN_LOCAL_DLL=1 to instead
+                      link a local core build at ..\ezvpn\dist\windows.
+                      Pin a release with scripts\bump-dll.ps1.
+
+         wintun.dll — the WireGuard wintun adapter (amd64), downloaded from the
+                      official build at wintun.net, verified by SHA256. arm64 is
+                      out of scope for this project.
+       ========================================================================== -->
+
+  <PropertyGroup>
+    <NativeDir>$(MSBuildThisFileDirectory)</NativeDir>
+
+    <!-- Pinned ezvpn.dll release. Fill EzvpnDllZipSha256 with scripts\bump-dll.ps1
+         once an ezvpn release that includes the build-windows-lib asset exists. -->
+    <EzvpnReleaseTag Condition="'$(EzvpnReleaseTag)' == ''">v0.0.21</EzvpnReleaseTag>
+    <EzvpnDllZipUrl>https://github.com/andrewtheguy/ezvpn/releases/download/$(EzvpnReleaseTag)/ezvpn-windows.dll.zip</EzvpnDllZipUrl>
+    <EzvpnDllZipSha256>7435a1b4a4d92c8583864afbc0e08bbb7fbccc1be0a4deb52e66d052716c9078</EzvpnDllZipSha256>
+
+    <!-- Local core build used when EZVPN_LOCAL_DLL=1 (see ..\ezvpn\build-windows.ps1).
+         In that mode ezvpn.dll is consumed straight from the sibling dist — it is
+         NOT copied into native\ — so nothing is synced into this repo. -->
+    <EzvpnLocalDistDir>$(MSBuildThisFileDirectory)..\..\ezvpn\dist\windows</EzvpnLocalDistDir>
+
+    <!-- Pinned wintun (official WireGuard build). amd64 only. -->
+    <WintunVersion>0.14.1</WintunVersion>
+    <WintunZipUrl>https://www.wintun.net/builds/wintun-$(WintunVersion).zip</WintunZipUrl>
+    <WintunZipSha256>07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51</WintunZipSha256>
+
+    <!-- Resolved copy sources. EZVPN_LOCAL_DLL=1 points ezvpn.dll at the sibling
+         dist directly; otherwise the staged (downloaded) copy in native\ is used.
+         wintun.dll always comes from native\ (downloaded / pre-staged in CI). -->
+    <EzvpnDllSource Condition="'$(EZVPN_LOCAL_DLL)' == '1'">$(EzvpnLocalDistDir)\ezvpn.dll</EzvpnDllSource>
+    <EzvpnDllSource Condition="'$(EzvpnDllSource)' == ''">$(NativeDir)ezvpn.dll</EzvpnDllSource>
+    <WintunDllSource>$(NativeDir)wintun.dll</WintunDllSource>
+  </PropertyGroup>
+
+  <!-- Download ezvpn.dll into native\ from the pinned release. Skipped entirely in
+       local mode (EZVPN_LOCAL_DLL=1 reads the sibling dist directly) and when
+       native\ezvpn.dll is already present (e.g. pre-staged in CI). -->
+  <Target Name="_StageEzvpnDll" Condition="'$(EZVPN_LOCAL_DLL)' != '1' And !Exists('$(NativeDir)ezvpn.dll')">
+    <PropertyGroup>
+      <NativeCacheDir>$(IntermediateOutputPath)native\</NativeCacheDir>
+      <_EzvpnZip>$(NativeCacheDir)ezvpn-windows.dll.zip</_EzvpnZip>
+      <_DownloadEzvpn Condition="'$(EzvpnDllZipSha256)' != ''">true</_DownloadEzvpn>
+    </PropertyGroup>
+    <!-- Runtime-only dependency: a failed download (e.g. offline) must NOT break an
+         ordinary compile/test build. Tolerate the download failure; the presence
+         check that fails the build lives in StageNativeDllsForPublish (MSI only). -->
+    <DownloadFile Condition="'$(_DownloadEzvpn)' == 'true'"
+                  SourceUrl="$(EzvpnDllZipUrl)"
+                  DestinationFolder="$(NativeCacheDir)"
+                  DestinationFileName="ezvpn-windows.dll.zip"
+                  Retries="3"
+                  ContinueOnError="true" />
+    <!-- Only hash/unzip/copy if the download actually produced the zip. Checksum
+         validation is retained: a corrupt download still fails the build. -->
+    <GetFileHash Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)')" Files="$(_EzvpnZip)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_EzvpnHash" />
+    </GetFileHash>
+    <Error Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)') And '$(_EzvpnHash.ToLowerInvariant())' != '$(EzvpnDllZipSha256.ToLowerInvariant())'"
+           Text="ezvpn-windows.dll.zip SHA256 mismatch: expected $(EzvpnDllZipSha256), got $(_EzvpnHash). URL: $(EzvpnDllZipUrl)" />
+    <Unzip Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)')" SourceFiles="$(_EzvpnZip)" DestinationFolder="$(NativeCacheDir)ezvpn" OverwriteReadOnlyFiles="true" />
+    <Copy Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(NativeCacheDir)ezvpn\ezvpn.dll')" SourceFiles="$(NativeCacheDir)ezvpn\ezvpn.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
+
+    <!-- No source available: warn but don't fail — the DLL is runtime-only. -->
+    <Warning Condition="'$(EzvpnDllZipSha256)' == ''"
+             Text="No pinned ezvpn.dll checksum. Run scripts\bump-dll.ps1 to pin an ezvpn release, or build with EZVPN_LOCAL_DLL=1. The app cannot run without ezvpn.dll." />
+  </Target>
+
+  <!-- Stage wintun.dll (amd64) into native\ from the official wintun.net build. -->
+  <Target Name="_StageWintunDll" Condition="!Exists('$(NativeDir)wintun.dll')">
+    <PropertyGroup>
+      <NativeCacheDir>$(IntermediateOutputPath)native\</NativeCacheDir>
+      <_WintunZip>$(NativeCacheDir)wintun-$(WintunVersion).zip</_WintunZip>
+    </PropertyGroup>
+    <!-- Runtime-only dependency: an offline/failed download must not break an
+         ordinary build. The MSI-blocking presence check lives in the publish target. -->
+    <DownloadFile SourceUrl="$(WintunZipUrl)"
+                  DestinationFolder="$(NativeCacheDir)"
+                  DestinationFileName="wintun-$(WintunVersion).zip"
+                  Retries="3"
+                  ContinueOnError="true" />
+    <!-- Only hash/unzip/copy if the download succeeded; checksum validation retained. -->
+    <GetFileHash Condition="Exists('$(_WintunZip)')" Files="$(_WintunZip)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_WintunHash" />
+    </GetFileHash>
+    <Error Condition="Exists('$(_WintunZip)') And '$(_WintunHash.ToLowerInvariant())' != '$(WintunZipSha256.ToLowerInvariant())'"
+           Text="wintun zip SHA256 mismatch: expected $(WintunZipSha256), got $(_WintunHash). URL: $(WintunZipUrl)" />
+    <Unzip Condition="Exists('$(_WintunZip)')" SourceFiles="$(_WintunZip)" DestinationFolder="$(NativeCacheDir)wintun" OverwriteReadOnlyFiles="true" />
+    <Copy Condition="Exists('$(NativeCacheDir)wintun\wintun\bin\amd64\wintun.dll')" SourceFiles="$(NativeCacheDir)wintun\wintun\bin\amd64\wintun.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Copy the staged DLLs into the build output (for run/debug) and the publish
+       output (for the MSI, which harvests from PublishDir). Missing files are
+       skipped so the project still compiles without them. -->
+  <Target Name="StageNativeDllsForBuild"
+          DependsOnTargets="_StageEzvpnDll;_StageWintunDll"
+          AfterTargets="Build">
+    <Warning Condition="'$(EZVPN_LOCAL_DLL)' == '1' And !Exists('$(EzvpnDllSource)')"
+             Text="EZVPN_LOCAL_DLL=1 but no local core build at $(EzvpnDllSource). Run ..\ezvpn\build-windows.ps1 first." />
+    <Copy Condition="Exists('$(EzvpnDllSource)')" SourceFiles="$(EzvpnDllSource)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy Condition="Exists('$(WintunDllSource)')" SourceFiles="$(WintunDllSource)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Publish is the MSI-production path: here both native DLLs are REQUIRED. A
+       missing DLL fails the publish (rather than shipping an app that can't run),
+       whereas an ordinary build/test only warns. Checksum validation happens
+       during staging above. -->
+  <Target Name="StageNativeDllsForPublish"
+          DependsOnTargets="_StageEzvpnDll;_StageWintunDll"
+          AfterTargets="Publish">
+    <Error Condition="!Exists('$(EzvpnDllSource)')"
+           Text="ezvpn.dll not available at $(EzvpnDllSource); cannot produce a runnable publish/MSI. Pin a release with scripts\bump-dll.ps1 or build with EZVPN_LOCAL_DLL=1 against a local core build." />
+    <Error Condition="!Exists('$(WintunDllSource)')"
+           Text="wintun.dll not available at $(WintunDllSource); cannot produce a runnable publish/MSI. It is normally downloaded from wintun.net during staging — check network access." />
+    <Copy SourceFiles="$(EzvpnDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(WintunDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -1,0 +1,34 @@
+<!-- WiX 5 (not 6/7): v6+ require accepting the paid Open Source Maintenance Fee
+     EULA at build time; v5 is unencumbered and sufficient here. -->
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputName>ezvpn</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- 64-bit package: components install into ProgramFiles64Folder. -->
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- ICE03: multi-language files in the harvested WindowsAppRuntime payload
+         report a Language id ICE rejects; harmless for install. ICE80 no longer
+         fires now that the package is x64. -->
+    <SuppressIces>ICE03</SuppressIces>
+    <!-- ProductVersion is overridable from CI (e.g. from the release tag). -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0.0</ProductVersion>
+    <!-- Directory holding the published, self-contained Ezvpn.App plus the
+         native DLLs (ezvpn.dll, wintun.dll). CI publishes there before building;
+         locally it defaults to ../publish. -->
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildProjectDirectory)\..\publish</PublishDir>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Fail the packaging build up front (before the Files harvest in Product.wxs)
+       if either native DLL is absent from the publish output. Without this the MSI
+       would happily ship without ezvpn.dll / wintun.dll and the installed app
+       would fail to start. -->
+  <Target Name="ValidateNativeDlls" BeforeTargets="Build">
+    <Error Condition="!Exists('$(PublishDir)\ezvpn.dll')"
+           Text="ezvpn.dll is missing from the publish output ($(PublishDir)). Publish the app first (native.targets stages the DLL) before building the MSI." />
+    <Error Condition="!Exists('$(PublishDir)\wintun.dll')"
+           Text="wintun.dll is missing from the publish output ($(PublishDir)). Publish the app first (native.targets stages the DLL) before building the MSI." />
+  </Target>
+
+</Project>

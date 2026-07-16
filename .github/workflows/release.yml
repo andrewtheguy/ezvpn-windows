@@ -1,0 +1,107 @@
+name: release
+
+on:
+  # Self-tagged prerelease builds: each run mints its own timestamp+hash tag
+  # (see "Determine version"), so there is no v* tag trigger.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "MSI ProductVersion (numeric, e.g. 0.1.0). The release tag is always yyyymmddhhmmss-<short-sha>."
+        required: false
+        default: "0.0.0"
+
+jobs:
+  release-msi:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout ezvpn-windows
+        uses: actions/checkout@v4
+        with:
+          path: gui
+
+      - name: Checkout ezvpn core (Rust)
+        uses: actions/checkout@v4
+        with:
+          repository: andrewtheguy/ezvpn
+          path: core
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Determine version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}"
+          if (-not $v) { $v = "0.0.0" }
+          # Normalize to a 4-part MSI ProductVersion.
+          $parts = $v.Split('.')
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $product = ($parts[0..3] -join '.')
+          # Release tag: UTC timestamp + short commit hash, always a prerelease.
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
+          $tag = "$ts-$sha"
+          "version=$v"            >> $env:GITHUB_OUTPUT
+          "product=$product"      >> $env:GITHUB_OUTPUT
+          "release_tag=$tag"      >> $env:GITHUB_OUTPUT
+
+      - name: Build ezvpn.dll
+        shell: pwsh
+        working-directory: core
+        run: ./build-windows.ps1 -Profile release -Target x86_64-pc-windows-msvc
+
+      - name: Stage ezvpn.dll from the core build
+        shell: pwsh
+        # Pre-stage the freshly built ezvpn.dll so native.targets uses it (it skips
+        # its own download when native\ezvpn.dll already exists) — the MSI ships the
+        # DLL built from this tag, not a pinned release. wintun.dll is fetched and
+        # SHA256-verified by native.targets during publish (see native/native.targets).
+        run: |
+          New-Item -ItemType Directory -Force -Path gui/native | Out-Null
+          Copy-Item core/dist/windows/ezvpn.dll gui/native/ezvpn.dll -Force
+          Get-ChildItem gui/native
+
+      - name: Publish app (self-contained)
+        shell: pwsh
+        run: |
+          dotnet publish gui/src/Ezvpn.App/Ezvpn.App.csproj `
+            -c Release -r win-x64 --self-contained `
+            -o publish
+          # Sanity: native.targets must have staged both DLLs into the publish output.
+          if (-not (Test-Path publish/ezvpn.dll)) { throw "ezvpn.dll missing from publish" }
+          if (-not (Test-Path publish/wintun.dll)) { throw "wintun.dll missing from publish" }
+
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          $pub = (Resolve-Path publish).Path
+          dotnet build gui/installer/Ezvpn.Installer.wixproj `
+            -c Release "-p:PublishDir=$pub" "-p:ProductVersion=${{ steps.ver.outputs.product }}"
+          Copy-Item gui/installer/bin/Release/ezvpn.msi "ezvpn-${{ steps.ver.outputs.release_tag }}.msi"
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ezvpn-msi
+          path: ezvpn-*.msi
+
+      - name: Publish prerelease
+        # Always a prerelease, tagged yyyymmddhhmmss-<short-sha>. The tag is created
+        # on the triggering commit if it does not already exist.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.release_tag }}
+          name: ${{ steps.ver.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          files: ezvpn-*.msi
