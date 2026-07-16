@@ -60,7 +60,19 @@ public sealed partial class MainWindow : Window
 
     private void SetUpTray(string iconPath)
     {
-        _tray = new TrayIcon(_hwnd, iconPath, "ezvpn");
+        try
+        {
+            _tray = new TrayIcon(_hwnd, iconPath, "ezvpn");
+        }
+        catch (Exception)
+        {
+            // The tray icon is a convenience, not load-bearing. If it fails to
+            // register, run as a plain windowed app (with _tray null, closing the
+            // window quits) rather than failing startup.
+            _tray = null;
+            return;
+        }
+
         _tray.MenuStateProvider = () =>
             (Selected?.CanConnect ?? false, Selected?.CanDisconnect ?? false);
         _tray.Toggled += ToggleWindow;

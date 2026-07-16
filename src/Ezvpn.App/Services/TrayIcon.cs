@@ -32,9 +32,16 @@ public sealed class TrayIcon : IDisposable
     private const uint NIM_ADD = 0x0;
     private const uint NIM_MODIFY = 0x1;
     private const uint NIM_DELETE = 0x2;
+    private const uint NIM_SETVERSION = 0x4;
     private const uint NIF_MESSAGE = 0x1;
     private const uint NIF_ICON = 0x2;
     private const uint NIF_TIP = 0x4;
+
+    // Selects the callback contract. Version 3 keeps the legacy per-event mouse
+    // messages (WM_LBUTTONUP / WM_RBUTTONUP) that WndProc parses; version 4 would
+    // switch left-click to NIN_SELECT and move the anchor coords into wParam,
+    // which would require reworking the message handling below.
+    private const uint NOTIFYICON_VERSION = 3;
 
     private const uint IMAGE_ICON = 1;
     private const uint LR_LOADFROMFILE = 0x10;
@@ -92,6 +99,11 @@ public sealed class TrayIcon : IDisposable
             IntPtr.Zero, iconPath, IMAGE_ICON,
             GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
             LR_LOADFROMFILE);
+        if (_icon == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"Failed to load tray icon from '{iconPath}' (Win32 error {Marshal.GetLastWin32Error()}).");
+        }
 
         _wndProc = WndProc;
         _oldWndProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProc));
@@ -106,7 +118,19 @@ public sealed class TrayIcon : IDisposable
             hIcon = _icon,
             szTip = tooltip,
         };
-        Shell_NotifyIcon(NIM_ADD, ref _data);
+        if (!Shell_NotifyIcon(NIM_ADD, ref _data))
+        {
+            // Roll back the partial initialization so we don't leak the icon or
+            // leave the window permanently subclassed for an icon that isn't there.
+            SetWindowLongPtr(_hwnd, GWLP_WNDPROC, _oldWndProc);
+            DestroyIcon(_icon);
+            _icon = IntPtr.Zero;
+            throw new InvalidOperationException("Shell_NotifyIcon(NIM_ADD) failed to register the tray icon.");
+        }
+
+        // Opt into a defined callback contract instead of the implicit default.
+        _data.uVersionOrTimeout = NOTIFYICON_VERSION;
+        Shell_NotifyIcon(NIM_SETVERSION, ref _data);
     }
 
     /// <summary>Update the hover tooltip (e.g. to reflect connection state).</summary>
