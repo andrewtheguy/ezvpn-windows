@@ -38,7 +38,10 @@
                   Description="ezvpn VPN client"
                   Target="[INSTALLFOLDER]Ezvpn.App.exe"
                   WorkingDirectory="INSTALLFOLDER" />
-        <RegistryValue Root="HKLM" Key="Software\ezvpn" Name="installed"
+        <!-- Non-advertised shortcut in the (per-user) Start Menu: WiX/ICE
+             (ICE38/ICE43/ICE57) require this component's KeyPath to be an HKCU
+             registry value, even in a perMachine package. -->
+        <RegistryValue Root="HKCU" Key="Software\ezvpn" Name="installed"
                        Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </ComponentGroup>
