@@ -1,14 +1,10 @@
 name: release
 
 on:
-  # Self-tagged prerelease builds: each run mints its own timestamp+hash tag
-  # (see "Determine version"), so there is no v* tag trigger.
+  # Self-tagged prerelease builds: each run mints its own timestamp+hash tag and
+  # derives the MSI ProductVersion from the same UTC build time (see "Determine
+  # version"), so there is no v* tag trigger and nothing to customize.
   workflow_dispatch:
-    inputs:
-      version:
-        description: "MSI ProductVersion (numeric, e.g. 0.1.0). The release tag is always yyyymmddhhmmss-<short-sha>."
-        required: false
-        default: "0.0.0"
 
 jobs:
   release-msi:
@@ -41,17 +37,20 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          $v = "${{ github.event.inputs.version }}"
-          if (-not $v) { $v = "0.0.0" }
-          # Normalize to a 4-part MSI ProductVersion.
-          $parts = $v.Split('.')
-          while ($parts.Count -lt 4) { $parts += '0' }
-          $product = ($parts[0..3] -join '.')
+          $now = (Get-Date).ToUniversalTime()
           # Release tag: UTC timestamp + short commit hash, always a prerelease.
           $sha = "${{ github.sha }}".Substring(0, 7)
-          $ts = (Get-Date).ToUniversalTime().ToString('yyyyMMddHHmmss')
+          $ts = $now.ToString('yyyyMMddHHmmss')
           $tag = "$ts-$sha"
-          "version=$v"            >> $env:GITHUB_OUTPUT
+          # MSI ProductVersion is derived from the same build time — not
+          # user-supplied. MSI compares major.minor.build (major/minor <= 255,
+          # build <= 65535; the 4th field is ignored), so encode the timestamp as
+          # a monotonically increasing version that keeps MajorUpgrade working:
+          #   major = years since 2000, minor = month, build = minutes into month.
+          $major = $now.Year - 2000
+          $minor = $now.Month
+          $build = $now.Day * 1440 + $now.Hour * 60 + $now.Minute
+          $product = "$major.$minor.$build.0"
           "product=$product"      >> $env:GITHUB_OUTPUT
           "release_tag=$tag"      >> $env:GITHUB_OUTPUT
 
