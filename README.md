@@ -42,44 +42,91 @@ See `docs/Windows-App.md` in the `ezvpn` repo for the FFI contract.
 
 ## Build & run (local)
 
-Prerequisites: .NET 10 SDK. To run the tunnel you also need `ezvpn.dll` and
-`wintun.dll` next to the app, and you must run elevated.
+Prerequisites: .NET 10 SDK.
+
+The app **compiles and tests without any native DLLs** (P/Invoke resolves them at
+runtime), but it **refuses to start** unless both `ezvpn.dll` and `wintun.dll` are
+in the build output beside the exe. On launch it checks for them and, if either
+is missing, shows an *"ezvpn cannot start"* dialog naming what's absent and where
+it looked, then exits — rather than crashing with no window (missing `ezvpn.dll`)
+or failing only later at connect time (missing `wintun.dll`).
+
+### 1. Native DLLs — fetched automatically
+
+The build acquires both native DLLs for you (see `native/native.targets`), stages
+them under `native\`, and copies them into the build/publish output — no manual
+copying:
+
+- **`wintun.dll`** — downloaded from the official WireGuard build at
+  <https://www.wintun.net/> (amd64), verified by SHA256. Always automatic.
+- **`ezvpn.dll`** — downloaded from a **pinned `ezvpn` release** asset
+  (`ezvpn-windows.dll.zip`), verified by SHA256. This is the "reference the
+  release zip directly, no local core build" path, mirroring how `ezvpn-apple`
+  pins the xcframework. Pin/update the release with `scripts\bump-dll.ps1`
+  (the Windows analog of `ezvpn-apple`'s `bump-xcframework.sh`):
+
+  ```powershell
+  ./scripts/bump-dll.ps1 v0.0.21     # or omit the tag for the latest release
+  ```
+
+To iterate on the FFI against a **local core build** instead of a release, set
+`EZVPN_LOCAL_DLL=1`; `ezvpn.dll` is then linked straight from
+`..\ezvpn\dist\windows` (build it there with `./build-windows.ps1`). `wintun.dll`
+is still downloaded automatically.
 
 ```powershell
-# 1. Build ezvpn.dll from the sibling core repo
-cd ..\ezvpn
-./build-windows.ps1                     # -> ..\ezvpn\dist\windows\ezvpn.dll
+# Local FFI dev against ..\ezvpn\dist\windows\ezvpn.dll
+cd ..\ezvpn; ./build-windows.ps1; cd ..\ezvpn-windows
+$env:EZVPN_LOCAL_DLL = "1"
+```
 
-# 2. Put ezvpn.dll + wintun.dll where the app build expects them
-cd ..\ezvpn-windows
-mkdir native -Force
-copy ..\ezvpn\dist\windows\ezvpn.dll native\
-# download wintun.dll from https://www.wintun.net/ (wintun\bin\amd64\wintun.dll)
-copy <path>\wintun.dll native\
+> Until an `ezvpn` release has shipped the `ezvpn-windows.dll.zip` asset and
+> `bump-dll.ps1` has pinned its checksum, the default download for `ezvpn.dll` is
+> skipped (the build warns but still succeeds) — use `EZVPN_LOCAL_DLL=1` in the
+> meantime.
 
-# 3. Build & test
-dotnet build ezvpn-windows.slnx
+### 2. Build & test
+
+```powershell
+dotnet build ezvpn-windows.slnx        # fetches native DLLs; honors EZVPN_LOCAL_DLL
 dotnet test tests/Ezvpn.Core.Tests/Ezvpn.Core.Tests.csproj
+```
 
-# 4. Run (must be an ELEVATED terminal, or the app's UAC prompt will elevate it)
+### 3. Run (elevated — this is the part that trips people up)
+
+The app manifest requests Administrator, so it can only start **with UAC
+elevation**. That has one important consequence:
+
+> ⚠️ **`dotnet run` does _not_ work from a normal terminal.** It launches the exe
+> with `CreateProcess`, which cannot elevate — Windows blocks the launch and you
+> see *nothing* (no window, no UAC prompt, no error).
+
+Use one of these instead:
+
+```powershell
+# A. Launch the built exe so Windows shows the UAC prompt (or just double-click it
+#    in Explorer). Works from any terminal.
+Start-Process src\Ezvpn.App\bin\Debug\net10.0-windows10.0.19041.0\win-x64\Ezvpn.App.exe
+
+# B. Or run `dotnet run` from an ALREADY-elevated terminal (open Windows Terminal /
+#    PowerShell "as Administrator"). The child inherits elevation, so it starts.
 dotnet run --project src/Ezvpn.App
 ```
 
-For quick FFI dev, set `EZVPN_LOCAL_DLL=1` so the app build pulls `ezvpn.dll`
-straight from `..\ezvpn\dist\windows` (you still stage `wintun.dll` under
-`native/`).
+Note it's a GUI app: output goes to a window, never to the terminal.
 
 ## Installer (MSI)
 
 ```powershell
 dotnet publish src/Ezvpn.App/Ezvpn.App.csproj -c Release -r win-x64 --self-contained -o publish
-# ensure publish\ezvpn.dll and publish\wintun.dll are present
+# native.targets stages ezvpn.dll + wintun.dll into publish\ automatically
 dotnet build installer/Ezvpn.Installer.wixproj -c Release -p:PublishDir=(Resolve-Path publish) -p:ProductVersion=0.1.0.0
 # -> installer/bin/Release/ezvpn.msi
 ```
 
-CI builds the MSI automatically on a `v*` tag (`.github/workflows/release.yml`),
-building `ezvpn.dll` from the core repo and downloading `wintun.dll`.
+CI builds the MSI automatically on a `v*` tag (`.github/workflows/release.yml`): it
+builds `ezvpn.dll` from the core repo (so the MSI ships the DLL for that tag) and
+lets `native.targets` download + SHA256-verify `wintun.dll` during publish.
 
 ## Usage
 

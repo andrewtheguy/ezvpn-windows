@@ -29,6 +29,42 @@ public sealed class EzvpnSession : IDisposable
     public static void InitLogging() => EzvpnNative.InitLogging();
 
     /// <summary>
+    /// Verify the native runtime dependencies are present beside the app, so a
+    /// missing DLL fails fast at startup with a clear, actionable message instead
+    /// of a cryptic load crash (ezvpn.dll) or a deferred failure at connect time
+    /// (wintun.dll). Call this before the first FFI call. Throws
+    /// <see cref="EzvpnException"/> listing whatever is missing.
+    /// </summary>
+    public static void EnsureNativeDependencies()
+    {
+        var dir = AppContext.BaseDirectory;
+        var problems = new List<string>();
+
+        if (!File.Exists(Path.Combine(dir, "ezvpn.dll")))
+        {
+            problems.Add(
+                "ezvpn.dll is missing. Build it from the sibling core repo " +
+                "(..\\ezvpn\\build-windows.ps1) and either copy it into native\\ or " +
+                "build with EZVPN_LOCAL_DLL=1.");
+        }
+
+        if (!File.Exists(Path.Combine(dir, "wintun.dll")))
+        {
+            problems.Add(
+                "wintun.dll is missing. Download it from https://www.wintun.net/ " +
+                "(wintun\\bin\\amd64\\wintun.dll) and copy it into native\\. It must " +
+                "sit next to ezvpn.dll to create the tunnel adapter.");
+        }
+
+        if (problems.Count > 0)
+        {
+            throw new EzvpnException(
+                $"Required native libraries are missing from:\n{dir}\n\n" +
+                string.Join("\n\n", problems));
+        }
+    }
+
+    /// <summary>
     /// Start the client from an <c>ezvpn_start</c> config JSON string (build it
     /// with <see cref="EzvpnConfig.Build"/>). Returns once *started*; poll
     /// <see cref="TryGetStatus"/> for the connected state. Throws
