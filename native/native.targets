@@ -58,18 +58,24 @@
       <_EzvpnZip>$(NativeCacheDir)ezvpn-windows.dll.zip</_EzvpnZip>
       <_DownloadEzvpn Condition="'$(EzvpnDllZipSha256)' != ''">true</_DownloadEzvpn>
     </PropertyGroup>
+    <!-- Runtime-only dependency: a failed download (e.g. offline) must NOT break an
+         ordinary compile/test build. Tolerate the download failure; the presence
+         check that fails the build lives in StageNativeDllsForPublish (MSI only). -->
     <DownloadFile Condition="'$(_DownloadEzvpn)' == 'true'"
                   SourceUrl="$(EzvpnDllZipUrl)"
                   DestinationFolder="$(NativeCacheDir)"
                   DestinationFileName="ezvpn-windows.dll.zip"
-                  Retries="3" />
-    <GetFileHash Condition="'$(_DownloadEzvpn)' == 'true'" Files="$(_EzvpnZip)" Algorithm="SHA256">
+                  Retries="3"
+                  ContinueOnError="true" />
+    <!-- Only hash/unzip/copy if the download actually produced the zip. Checksum
+         validation is retained: a corrupt download still fails the build. -->
+    <GetFileHash Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)')" Files="$(_EzvpnZip)" Algorithm="SHA256">
       <Output TaskParameter="Hash" PropertyName="_EzvpnHash" />
     </GetFileHash>
-    <Error Condition="'$(_DownloadEzvpn)' == 'true' And '$(_EzvpnHash.ToLowerInvariant())' != '$(EzvpnDllZipSha256.ToLowerInvariant())'"
+    <Error Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)') And '$(_EzvpnHash.ToLowerInvariant())' != '$(EzvpnDllZipSha256.ToLowerInvariant())'"
            Text="ezvpn-windows.dll.zip SHA256 mismatch: expected $(EzvpnDllZipSha256), got $(_EzvpnHash). URL: $(EzvpnDllZipUrl)" />
-    <Unzip Condition="'$(_DownloadEzvpn)' == 'true'" SourceFiles="$(_EzvpnZip)" DestinationFolder="$(NativeCacheDir)ezvpn" OverwriteReadOnlyFiles="true" />
-    <Copy Condition="'$(_DownloadEzvpn)' == 'true'" SourceFiles="$(NativeCacheDir)ezvpn\ezvpn.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
+    <Unzip Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(_EzvpnZip)')" SourceFiles="$(_EzvpnZip)" DestinationFolder="$(NativeCacheDir)ezvpn" OverwriteReadOnlyFiles="true" />
+    <Copy Condition="'$(_DownloadEzvpn)' == 'true' And Exists('$(NativeCacheDir)ezvpn\ezvpn.dll')" SourceFiles="$(NativeCacheDir)ezvpn\ezvpn.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
 
     <!-- No source available: warn but don't fail — the DLL is runtime-only. -->
     <Warning Condition="'$(EzvpnDllZipSha256)' == ''"
@@ -82,17 +88,21 @@
       <NativeCacheDir>$(IntermediateOutputPath)native\</NativeCacheDir>
       <_WintunZip>$(NativeCacheDir)wintun-$(WintunVersion).zip</_WintunZip>
     </PropertyGroup>
+    <!-- Runtime-only dependency: an offline/failed download must not break an
+         ordinary build. The MSI-blocking presence check lives in the publish target. -->
     <DownloadFile SourceUrl="$(WintunZipUrl)"
                   DestinationFolder="$(NativeCacheDir)"
                   DestinationFileName="wintun-$(WintunVersion).zip"
-                  Retries="3" />
-    <GetFileHash Files="$(_WintunZip)" Algorithm="SHA256">
+                  Retries="3"
+                  ContinueOnError="true" />
+    <!-- Only hash/unzip/copy if the download succeeded; checksum validation retained. -->
+    <GetFileHash Condition="Exists('$(_WintunZip)')" Files="$(_WintunZip)" Algorithm="SHA256">
       <Output TaskParameter="Hash" PropertyName="_WintunHash" />
     </GetFileHash>
-    <Error Condition="'$(_WintunHash.ToLowerInvariant())' != '$(WintunZipSha256.ToLowerInvariant())'"
+    <Error Condition="Exists('$(_WintunZip)') And '$(_WintunHash.ToLowerInvariant())' != '$(WintunZipSha256.ToLowerInvariant())'"
            Text="wintun zip SHA256 mismatch: expected $(WintunZipSha256), got $(_WintunHash). URL: $(WintunZipUrl)" />
-    <Unzip SourceFiles="$(_WintunZip)" DestinationFolder="$(NativeCacheDir)wintun" OverwriteReadOnlyFiles="true" />
-    <Copy SourceFiles="$(NativeCacheDir)wintun\wintun\bin\amd64\wintun.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
+    <Unzip Condition="Exists('$(_WintunZip)')" SourceFiles="$(_WintunZip)" DestinationFolder="$(NativeCacheDir)wintun" OverwriteReadOnlyFiles="true" />
+    <Copy Condition="Exists('$(NativeCacheDir)wintun\wintun\bin\amd64\wintun.dll')" SourceFiles="$(NativeCacheDir)wintun\wintun\bin\amd64\wintun.dll" DestinationFolder="$(NativeDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <!-- Copy the staged DLLs into the build output (for run/debug) and the publish
@@ -107,11 +117,19 @@
     <Copy Condition="Exists('$(WintunDllSource)')" SourceFiles="$(WintunDllSource)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
+  <!-- Publish is the MSI-production path: here both native DLLs are REQUIRED. A
+       missing DLL fails the publish (rather than shipping an app that can't run),
+       whereas an ordinary build/test only warns. Checksum validation happens
+       during staging above. -->
   <Target Name="StageNativeDllsForPublish"
           DependsOnTargets="_StageEzvpnDll;_StageWintunDll"
           AfterTargets="Publish">
-    <Copy Condition="Exists('$(EzvpnDllSource)')" SourceFiles="$(EzvpnDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
-    <Copy Condition="Exists('$(WintunDllSource)')" SourceFiles="$(WintunDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Error Condition="!Exists('$(EzvpnDllSource)')"
+           Text="ezvpn.dll not available at $(EzvpnDllSource); cannot produce a runnable publish/MSI. Pin a release with scripts\bump-dll.ps1 or build with EZVPN_LOCAL_DLL=1 against a local core build." />
+    <Error Condition="!Exists('$(WintunDllSource)')"
+           Text="wintun.dll not available at $(WintunDllSource); cannot produce a runnable publish/MSI. It is normally downloaded from wintun.net during staging — check network access." />
+    <Copy SourceFiles="$(EzvpnDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(WintunDllSource)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

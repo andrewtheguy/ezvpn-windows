@@ -115,8 +115,11 @@ public sealed class EzvpnSession : IDisposable
                 {
                     if (size >= MaxStatusBytes)
                     {
-                        // Give up growing; return whatever fit (best effort).
-                        return ReadCString(buf);
+                        // rc == 0 means the response was truncated to fit the
+                        // buffer. At the ceiling we can't grow further, so the
+                        // content is incomplete — returning it would hand back
+                        // unparseable/partial JSON. Signal "unavailable" instead.
+                        return null;
                     }
                     size = Math.Min(size * 2, MaxStatusBytes);
                     continue;

@@ -120,7 +120,7 @@ Note it's a GUI app: output goes to a window, never to the terminal.
 ```powershell
 dotnet publish src/Ezvpn.App/Ezvpn.App.csproj -c Release -r win-x64 --self-contained -o publish
 # native.targets stages ezvpn.dll + wintun.dll into publish\ automatically
-dotnet build installer/Ezvpn.Installer.wixproj -c Release -p:PublishDir=(Resolve-Path publish) -p:ProductVersion=0.1.0.0
+dotnet build installer/Ezvpn.Installer.wixproj -c Release -p:PublishDir="$(Resolve-Path publish)" -p:ProductVersion=0.1.0.0
 # -> installer/bin/Release/ezvpn.msi
 ```
 

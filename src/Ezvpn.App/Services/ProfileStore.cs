@@ -49,7 +49,38 @@ public sealed class ProfileStore
 
     public void Save(TunnelProfile profile)
     {
-        File.WriteAllText(PathFor(profile.Id), JsonSerializer.Serialize(profile, Options));
+        var path = PathFor(profile.Id);
+        var tmp = path + ".tmp";
+
+        // Write to a sibling temp file first, then atomically swap it in, so a
+        // crash or I/O failure mid-write can never leave a truncated profile.
+        File.WriteAllText(tmp, JsonSerializer.Serialize(profile, Options));
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Replace(tmp, path, null);
+            }
+            else
+            {
+                File.Move(tmp, path);
+            }
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(tmp))
+                {
+                    File.Delete(tmp);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup; surface the original failure below.
+            }
+            throw;
+        }
     }
 
     public void Delete(Guid id)

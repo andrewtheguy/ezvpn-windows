@@ -46,6 +46,8 @@ public sealed class TunnelViewModel : ObservableObject
                 OnPropertyChanged(nameof(IsBusy));
                 OnPropertyChanged(nameof(CanConnect));
                 OnPropertyChanged(nameof(CanDisconnect));
+                // HasError depends on State as well as Error.
+                OnPropertyChanged(nameof(HasError));
             }
         }
     }
@@ -64,7 +66,14 @@ public sealed class TunnelViewModel : ObservableObject
     public string? Error
     {
         get => _error;
-        private set => SetProperty(ref _error, value);
+        private set
+        {
+            if (SetProperty(ref _error, value))
+            {
+                OnPropertyChanged(nameof(ErrorText));
+                OnPropertyChanged(nameof(HasError));
+            }
+        }
     }
 
     public bool IsConnected => State == ConnectionState.Connected;
@@ -105,8 +114,13 @@ public sealed class TunnelViewModel : ObservableObject
 
     public string ConnectedSinceText =>
         _status?.ConnectedSinceSecs is { } secs
-            ? TimeSpan.FromSeconds(secs).ToString(@"hh\:mm\:ss")
+            ? FormatElapsed(TimeSpan.FromSeconds(secs))
             : "—";
+
+    // Format as total hours:minutes:seconds so a session longer than a day does
+    // not wrap the hours component back to 0 (TimeSpan's "hh" is 0–23).
+    private static string FormatElapsed(TimeSpan t) =>
+        $"{(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
 
     // --- State transitions ----------------------------------------------------
 

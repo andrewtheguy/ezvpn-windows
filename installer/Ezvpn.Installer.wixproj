@@ -20,4 +20,15 @@
     <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
   </PropertyGroup>
 
+  <!-- Fail the packaging build up front (before the Files harvest in Product.wxs)
+       if either native DLL is absent from the publish output. Without this the MSI
+       would happily ship without ezvpn.dll / wintun.dll and the installed app
+       would fail to start. -->
+  <Target Name="ValidateNativeDlls" BeforeTargets="Build">
+    <Error Condition="!Exists('$(PublishDir)\ezvpn.dll')"
+           Text="ezvpn.dll is missing from the publish output ($(PublishDir)). Publish the app first (native.targets stages the DLL) before building the MSI." />
+    <Error Condition="!Exists('$(PublishDir)\wintun.dll')"
+           Text="wintun.dll is missing from the publish output ($(PublishDir)). Publish the app first (native.targets stages the DLL) before building the MSI." />
+  </Target>
+
 </Project>

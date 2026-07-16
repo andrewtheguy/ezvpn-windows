@@ -52,11 +52,30 @@ public sealed partial class TunnelEditDialog : ContentDialog
         var dns = DnsBox.Text.Trim();
         profile.DnsServer = dns.Length == 0 ? null : dns;
         profile.AutoReconnect = AutoReconnectCheck.IsChecked ?? true;
-        profile.MaxReconnectAttempts =
-            double.IsNaN(MaxAttemptsBox.Value) || MaxAttemptsBox.Value < 1
-                ? null
-                : (uint)MaxAttemptsBox.Value;
+        profile.MaxReconnectAttempts = ParseMaxAttempts(MaxAttemptsBox.Value);
         return TokenBox.Password;
+    }
+
+    /// <summary>
+    /// Accept only a finite whole number in [1, uint.MaxValue]; NaN, infinity,
+    /// fractional, and out-of-range values are treated as "unset" (null) rather
+    /// than being silently truncated or overflowing on the cast.
+    /// </summary>
+    private static uint? ParseMaxAttempts(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return null;
+        }
+        if (value < 1 || value > uint.MaxValue)
+        {
+            return null;
+        }
+        if (value != Math.Floor(value))
+        {
+            return null;
+        }
+        return (uint)value;
     }
 
     private void OnPrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
