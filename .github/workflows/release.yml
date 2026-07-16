@@ -49,9 +49,7 @@ jobs:
         # SHA256-verified ezvpn.dll from the pinned ezvpn release (and wintun.dll
         # from wintun.net) during publish. Update the pin with scripts\bump-dll.ps1.
         run: |
-          dotnet publish gui/src/Ezvpn.App/Ezvpn.App.csproj `
-            -c Release -r win-x64 --self-contained `
-            -o publish
+          dotnet publish gui/src/Ezvpn.App/Ezvpn.App.csproj -c Release -r win-x64 --self-contained -o publish
           # Sanity: native.targets must have staged both DLLs into the publish output.
           if (-not (Test-Path publish/ezvpn.dll)) { throw "ezvpn.dll missing from publish" }
           if (-not (Test-Path publish/wintun.dll)) { throw "wintun.dll missing from publish" }
@@ -60,8 +58,7 @@ jobs:
         shell: pwsh
         run: |
           $pub = (Resolve-Path publish).Path
-          dotnet build gui/installer/Ezvpn.Installer.wixproj `
-            -c Release "-p:PublishDir=$pub" "-p:ProductVersion=${{ steps.ver.outputs.product }}"
+          dotnet build gui/installer/Ezvpn.Installer.wixproj -c Release "-p:PublishDir=$pub" "-p:ProductVersion=${{ steps.ver.outputs.product }}"
           Copy-Item gui/installer/bin/Release/ezvpn.msi "ezvpn-${{ steps.ver.outputs.release_tag }}.msi"
 
       - name: Upload MSI artifact
