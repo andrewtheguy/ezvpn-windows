@@ -14,30 +14,72 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+
+        // Anything unhandled that reaches the framework (e.g. a throwing async
+        // event handler) would otherwise crash the app as a "stowed exception"
+        // with no message. Log it and show it, but keep running — the window is
+        // already up, so a single failed action shouldn't kill the process.
+        UnhandledException += (_, e) =>
+        {
+            e.Handled = true;
+            TryLog("Unhandled exception", e.Exception.ToString());
+            MessageBox(IntPtr.Zero, e.Exception.Message, "ezvpn error", MbIconError);
+        };
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // Fail fast if the native DLLs aren't beside the app: without ezvpn.dll
-        // the process would crash on the first P/Invoke with no window; without
-        // wintun.dll the window would open but Connect would fail later. Surface a
-        // clear message up front instead.
         try
         {
+            // Fail fast if the native DLLs aren't beside the app: without ezvpn.dll
+            // the process would crash on the first P/Invoke with no window; without
+            // wintun.dll the window would open but Connect would fail later.
             EzvpnSession.EnsureNativeDependencies();
+
+            // Route the Rust core's logs to stderr (honors RUST_LOG).
+            EzvpnSession.InitLogging();
+
+            _window = new MainWindow();
+            _window.Activate();
         }
         catch (EzvpnException ex)
         {
-            MessageBox(IntPtr.Zero, ex.Message, "ezvpn cannot start", MbIconError);
-            Exit();
-            return;
+            // Expected, actionable message (missing native deps) — no stack trace.
+            ReportFatalStartup("ezvpn cannot start", ex.Message);
         }
+        catch (Exception ex)
+        {
+            // Any other startup failure (e.g. a missing resources.pri would surface
+            // here rather than as a silent stowed-exception crash).
+            ReportFatalStartup("ezvpn failed to start", ex.ToString());
+        }
+    }
 
-        // Route the Rust core's logs to stderr (honors RUST_LOG).
-        EzvpnSession.InitLogging();
+    /// <summary>Log a fatal startup error, show it, and exit — the app can't run.</summary>
+    private void ReportFatalStartup(string caption, string detail)
+    {
+        TryLog(caption, detail);
+        MessageBox(IntPtr.Zero, detail, caption, MbIconError);
+        Exit();
+    }
 
-        _window = new MainWindow();
-        _window.Activate();
+    /// <summary>Best-effort append to %ProgramData%\ezvpn\startup-error.log.</summary>
+    private static void TryLog(string caption, string detail)
+    {
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "ezvpn");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(
+                Path.Combine(dir, "startup-error.log"),
+                $"[{DateTimeOffset.Now:o}] {caption}{Environment.NewLine}{detail}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch
+        {
+            // Logging must never mask the original failure.
+        }
     }
 
     [LibraryImport("user32.dll", EntryPoint = "MessageBoxW", StringMarshalling = StringMarshalling.Utf16)]

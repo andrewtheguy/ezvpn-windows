@@ -36,4 +36,17 @@
        (verified by SHA256) and copies them into the build / publish output. -->
   <Import Project="..\..\native\native.targets" />
 
+  <!-- `dotnet publish` for an unpackaged (WindowsPackageType=None) WinUI 3 app
+       drops the app resource index (Ezvpn.App.pri) — it stays in the build output
+       but is never added to the publish set. Without it, WinUI can't resolve its
+       XAML resources (XamlControlsResources) and the app crashes at startup with a
+       combase E_FAIL stowed exception before any window appears. Copy the generated
+       PRI into the publish output so the MSI (which harvests PublishDir) ships it. -->
+  <Target Name="CopyAppPriToPublish" AfterTargets="Publish"
+          Condition="Exists('$(ProjectPriFullPath)')">
+    <Copy SourceFiles="$(ProjectPriFullPath)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>
