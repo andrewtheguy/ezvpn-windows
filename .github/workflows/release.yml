@@ -17,21 +17,10 @@ jobs:
         with:
           path: gui
 
-      - name: Checkout ezvpn core (Rust)
-        uses: actions/checkout@v4
-        with:
-          repository: andrewtheguy/ezvpn
-          path: core
-
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
 
       - name: Determine version
         id: ver
@@ -54,24 +43,11 @@ jobs:
           "product=$product"      >> $env:GITHUB_OUTPUT
           "release_tag=$tag"      >> $env:GITHUB_OUTPUT
 
-      - name: Build ezvpn.dll
-        shell: pwsh
-        working-directory: core
-        run: ./build-windows.ps1 -Profile release -Target x86_64-pc-windows-msvc
-
-      - name: Stage ezvpn.dll from the core build
-        shell: pwsh
-        # Pre-stage the freshly built ezvpn.dll so native.targets uses it (it skips
-        # its own download when native\ezvpn.dll already exists) — the MSI ships the
-        # DLL built from this tag, not a pinned release. wintun.dll is fetched and
-        # SHA256-verified by native.targets during publish (see native/native.targets).
-        run: |
-          New-Item -ItemType Directory -Force -Path gui/native | Out-Null
-          Copy-Item core/dist/windows/ezvpn.dll gui/native/ezvpn.dll -Force
-          Get-ChildItem gui/native
-
       - name: Publish app (self-contained)
         shell: pwsh
+        # No Rust / core build here: native.targets downloads the prebuilt,
+        # SHA256-verified ezvpn.dll from the pinned ezvpn release (and wintun.dll
+        # from wintun.net) during publish. Update the pin with scripts\bump-dll.ps1.
         run: |
           dotnet publish gui/src/Ezvpn.App/Ezvpn.App.csproj `
             -c Release -r win-x64 --self-contained `

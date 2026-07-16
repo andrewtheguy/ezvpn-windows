@@ -124,9 +124,11 @@ dotnet build installer/Ezvpn.Installer.wixproj -c Release -p:PublishDir="$(Resol
 # -> installer/bin/Release/ezvpn.msi
 ```
 
-CI builds the MSI automatically on a `v*` tag (`.github/workflows/release.yml`): it
-builds `ezvpn.dll` from the core repo (so the MSI ships the DLL for that tag) and
-lets `native.targets` download + SHA256-verify `wintun.dll` during publish.
+CI builds the MSI on demand (`.github/workflows/release.yml`, `workflow_dispatch`):
+each run self-tags a `yyyymmddhhmmss-<short-sha>` prerelease. It does **no** Rust /
+core build — `native.targets` downloads the prebuilt, SHA256-verified `ezvpn.dll`
+from the pinned `ezvpn` release (and `wintun.dll` from wintun.net) during publish.
+Change which DLL ships by re-pinning with `scripts\bump-dll.ps1`.
 
 ## Usage
 
