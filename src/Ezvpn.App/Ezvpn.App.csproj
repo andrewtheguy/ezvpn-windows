@@ -42,6 +42,11 @@
     <Content Include="Assets\ezvpn.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Gray "not connected" variant, shown by the tray icon until the tunnel
+         connects. Generated alongside ezvpn.ico by scripts\render-icons.ps1. -->
+    <Content Include="Assets\ezvpn-gray.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- Native DLLs (ezvpn.dll, wintun.dll) are resolved at RUNTIME (P/Invoke), so

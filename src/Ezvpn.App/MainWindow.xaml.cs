@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
     private readonly TunnelsManager _manager;
     private readonly IntPtr _hwnd;
     private TrayIcon? _tray;
+    private TunnelViewModel? _trackedActive;
     private bool _isExiting;
 
     public MainWindow()
@@ -30,17 +31,24 @@ public sealed partial class MainWindow : Window
 
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "ezvpn.ico");
+        var grayIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "ezvpn-gray.ico");
         if (File.Exists(iconPath))
         {
             // Title-bar / Alt-Tab icon (the .exe already carries it as its Win32
-            // icon via <ApplicationIcon>; this covers the live window too).
+            // icon via <ApplicationIcon>; this covers the live window too). The
+            // gray variant is only used by the tray, so fall back to the colored
+            // icon for both if it is missing.
             AppWindow.SetIcon(iconPath);
-            SetUpTray(iconPath);
+            SetUpTray(iconPath, File.Exists(grayIconPath) ? grayIconPath : iconPath);
         }
 
         // Closing the window hides to the tray instead of quitting; the tunnel
-        // keeps running. Quit (tray menu) is the only path that exits. Without a
-        // tray there is nothing to hide to, so fall back to the plain quit behavior.
+        // keeps running. Quit (tray menu) is the only path that exits. Because the
+        // window is hidden and not destroyed, this MainWindow instance stays alive
+        // while in the tray — its poll timer keeps ticking and its PropertyChanged
+        // subscriptions keep firing, so the tray icon's connection state (see
+        // SetUpTray) stays live while the window is closed. Without a tray there is
+        // nothing to hide to, so fall back to the plain quit behavior.
         AppWindow.Closing += (_, e) =>
         {
             if (_tray is not null && !_isExiting)
@@ -62,11 +70,11 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private void SetUpTray(string iconPath)
+    private void SetUpTray(string iconPath, string grayIconPath)
     {
         try
         {
-            _tray = new TrayIcon(_hwnd, iconPath, "ezvpn");
+            _tray = new TrayIcon(_hwnd, iconPath, grayIconPath, "ezvpn");
         }
         catch (Exception)
         {
@@ -76,6 +84,21 @@ public sealed partial class MainWindow : Window
             _tray = null;
             return;
         }
+
+        // Reflect the active tunnel's connection state in the tray icon (gray
+        // until connected). The active tunnel changes as tunnels connect/switch,
+        // so re-subscribe to whichever view model is currently active. This works
+        // whether the window is shown or hidden to the tray: closing only hides
+        // the window (see AppWindow.Closing above), so these subscriptions and the
+        // manager's poll timer keep running until the app actually quits.
+        _manager.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TunnelsManager.Active))
+            {
+                TrackActiveConnection();
+            }
+        };
+        TrackActiveConnection();
 
         _tray.MenuStateProvider = () =>
             (Selected?.CanConnect ?? false, Selected?.CanDisconnect ?? false);
@@ -97,6 +120,36 @@ public sealed partial class MainWindow : Window
         };
         _tray.QuitRequested += Quit;
     }
+
+    /// <summary>
+    /// Point the tray's connection state at the currently active tunnel: unhook
+    /// the previous view model, hook the new one, and refresh the icon now.
+    /// </summary>
+    private void TrackActiveConnection()
+    {
+        if (_trackedActive is not null)
+        {
+            _trackedActive.PropertyChanged -= ActiveConnection_PropertyChanged;
+        }
+        _trackedActive = _manager.Active;
+        if (_trackedActive is not null)
+        {
+            _trackedActive.PropertyChanged += ActiveConnection_PropertyChanged;
+        }
+        UpdateTrayConnected();
+    }
+
+    private void ActiveConnection_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // Empty name is a bulk "everything changed" (raised on each status poll);
+        // IsConnected covers the explicit state transitions.
+        if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == nameof(TunnelViewModel.IsConnected))
+        {
+            UpdateTrayConnected();
+        }
+    }
+
+    private void UpdateTrayConnected() => _tray?.SetConnected(_manager.Active?.IsConnected ?? false);
 
     private void ToggleWindow()
     {

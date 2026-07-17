@@ -67,7 +67,9 @@ public sealed class TrayIcon : IDisposable
     private readonly IntPtr _oldWndProc;
 
     private NOTIFYICONDATAW _data;
-    private IntPtr _icon;
+    private IntPtr _connectedIcon;
+    private IntPtr _disconnectedIcon;
+    private bool _connected;
     private bool _disposed;
 
     /// <summary>Left-click on the icon (toggle the window).</summary>
@@ -87,27 +89,31 @@ public sealed class TrayIcon : IDisposable
     public Func<(bool CanConnect, bool CanDisconnect)>? MenuStateProvider { get; set; }
 
     /// <param name="hwnd">The owning window's HWND (its WndProc is subclassed).</param>
-    /// <param name="iconPath">Path to a .ico file.</param>
+    /// <param name="connectedIconPath">Path to the .ico shown while connected.</param>
+    /// <param name="disconnectedIconPath">
+    /// Path to the (gray) .ico shown while not connected; the tray starts here.
+    /// </param>
     /// <param name="tooltip">Hover tooltip (truncated to 127 chars by the shell).</param>
-    public TrayIcon(IntPtr hwnd, string iconPath, string tooltip)
+    public TrayIcon(IntPtr hwnd, string connectedIconPath, string disconnectedIconPath, string tooltip)
     {
         _hwnd = hwnd;
 
-        // Load at the small-icon size so the shell doesn't have to downscale a
-        // large frame; the multi-resolution .ico carries a 16/20/24/32 frame.
-        _icon = LoadImage(
-            IntPtr.Zero, iconPath, IMAGE_ICON,
-            GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-            LR_LOADFROMFILE);
-        if (_icon == IntPtr.Zero)
+        _connectedIcon = LoadTrayIcon(connectedIconPath);
+        try
         {
-            throw new InvalidOperationException(
-                $"Failed to load tray icon from '{iconPath}' (Win32 error {Marshal.GetLastWin32Error()}).");
+            _disconnectedIcon = LoadTrayIcon(disconnectedIconPath);
+        }
+        catch
+        {
+            DestroyIcon(_connectedIcon);
+            _connectedIcon = IntPtr.Zero;
+            throw;
         }
 
         _wndProc = WndProc;
         _oldWndProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, Marshal.GetFunctionPointerForDelegate(_wndProc));
 
+        // Start disconnected (gray): the tunnel is not connected until proven so.
         _data = new NOTIFYICONDATAW
         {
             cbSize = Marshal.SizeOf<NOTIFYICONDATAW>(),
@@ -115,22 +121,56 @@ public sealed class TrayIcon : IDisposable
             uID = 1,
             uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage = WM_TRAYICON,
-            hIcon = _icon,
+            hIcon = _disconnectedIcon,
             szTip = tooltip,
         };
         if (!Shell_NotifyIcon(NIM_ADD, ref _data))
         {
-            // Roll back the partial initialization so we don't leak the icon or
+            // Roll back the partial initialization so we don't leak the icons or
             // leave the window permanently subclassed for an icon that isn't there.
             SetWindowLongPtr(_hwnd, GWLP_WNDPROC, _oldWndProc);
-            DestroyIcon(_icon);
-            _icon = IntPtr.Zero;
+            DestroyIcon(_connectedIcon);
+            DestroyIcon(_disconnectedIcon);
+            _connectedIcon = IntPtr.Zero;
+            _disconnectedIcon = IntPtr.Zero;
             throw new InvalidOperationException("Shell_NotifyIcon(NIM_ADD) failed to register the tray icon.");
         }
 
         // Opt into a defined callback contract instead of the implicit default.
         _data.uVersionOrTimeout = NOTIFYICON_VERSION;
         Shell_NotifyIcon(NIM_SETVERSION, ref _data);
+    }
+
+    // Load at the small-icon size so the shell doesn't have to downscale a large
+    // frame; the multi-resolution .ico carries a 16/20/24/32 frame.
+    private static IntPtr LoadTrayIcon(string iconPath)
+    {
+        var icon = LoadImage(
+            IntPtr.Zero, iconPath, IMAGE_ICON,
+            GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+            LR_LOADFROMFILE);
+        if (icon == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"Failed to load tray icon from '{iconPath}' (Win32 error {Marshal.GetLastWin32Error()}).");
+        }
+        return icon;
+    }
+
+    /// <summary>
+    /// Switch the tray icon between the connected (teal) and not-connected (gray)
+    /// variants. No-op if the state is unchanged.
+    /// </summary>
+    public void SetConnected(bool connected)
+    {
+        if (_disposed || connected == _connected)
+        {
+            return;
+        }
+        _connected = connected;
+        _data.hIcon = connected ? _connectedIcon : _disconnectedIcon;
+        _data.uFlags = NIF_ICON;
+        Shell_NotifyIcon(NIM_MODIFY, ref _data);
     }
 
     /// <summary>Update the hover tooltip (e.g. to reflect connection state).</summary>
@@ -214,10 +254,15 @@ public sealed class TrayIcon : IDisposable
         {
             SetWindowLongPtr(_hwnd, GWLP_WNDPROC, _oldWndProc);
         }
-        if (_icon != IntPtr.Zero)
+        if (_connectedIcon != IntPtr.Zero)
         {
-            DestroyIcon(_icon);
-            _icon = IntPtr.Zero;
+            DestroyIcon(_connectedIcon);
+            _connectedIcon = IntPtr.Zero;
+        }
+        if (_disconnectedIcon != IntPtr.Zero)
+        {
+            DestroyIcon(_disconnectedIcon);
+            _disconnectedIcon = IntPtr.Zero;
         }
     }
 
