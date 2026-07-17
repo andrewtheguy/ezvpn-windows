@@ -1,13 +1,18 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Renders assets\icon.svg into src\Ezvpn.App\Assets\ezvpn.ico.
+    Renders assets\icon.svg into src\Ezvpn.App\Assets\ezvpn.ico (teal) and
+    ezvpn-gray.ico (a desaturated "disconnected" variant).
 
 .DESCRIPTION
     The Windows analogue of ezvpn-apple\scripts\render-icons.swift: it turns the
     single source-of-truth icon (assets\icon.svg — a white "shield + keyhole" VPN
     glyph on a teal gradient) into a multi-resolution .ico for the app/taskbar
     icon, the window title-bar icon, and the system-tray icon.
+
+    Two icons are produced from the same geometry, differing only in the
+    background gradient: the teal ezvpn.ico (the app/connected icon) and a gray
+    ezvpn-gray.ico that the tray shows while the tunnel is not connected.
 
     There is no ImageMagick/Inkscape dependency: the icon's geometry is simple and
     fully known, so it is drawn directly with GDI+ (System.Drawing) via Windows
@@ -26,8 +31,9 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$icoPath  = Join-Path $repoRoot 'src\Ezvpn.App\Assets\ezvpn.ico'
+$repoRoot     = Split-Path -Parent $PSScriptRoot
+$icoPath      = Join-Path $repoRoot 'src\Ezvpn.App\Assets\ezvpn.ico'
+$icoGrayPath  = Join-Path $repoRoot 'src\Ezvpn.App\Assets\ezvpn-gray.ico'
 
 # --- Geometry (1024x1024 space, mirrors assets\icon.svg) ---------------------
 # NB: this must NOT be a single letter like $S — PowerShell variable names are
@@ -35,10 +41,15 @@ $icoPath  = Join-Path $repoRoot 'src\Ezvpn.App\Assets\ezvpn.ico'
 # clobbered to the current size, collapsing the scale factor to 1.
 $CanvasSize = 1024.0
 
-# Teal gradient background, top-left -> bottom-right.
+# Teal gradient background, top-left -> bottom-right (the connected icon).
 #   stop 0: rgb(7%,65%,51%)   stop 1: rgb(2%,40%,36%)
-$bgTop    = [System.Drawing.Color]::FromArgb(255, [int](0.07*255), [int](0.65*255), [int](0.51*255))
-$bgBottom = [System.Drawing.Color]::FromArgb(255, [int](0.02*255), [int](0.40*255), [int](0.36*255))
+$tealTop    = [System.Drawing.Color]::FromArgb(255, [int](0.07*255), [int](0.65*255), [int](0.51*255))
+$tealBottom = [System.Drawing.Color]::FromArgb(255, [int](0.02*255), [int](0.40*255), [int](0.36*255))
+
+# Gray gradient for the "not connected yet" tray variant. Kept dark enough that
+# the white shield/keyhole glyph still reads at 16 px.
+$grayTop    = [System.Drawing.Color]::FromArgb(255, 150, 150, 150)
+$grayBottom = [System.Drawing.Color]::FromArgb(255, 90, 90, 90)
 
 $strokeW = 51.2   # shield stroke width in 1024-space
 
@@ -71,7 +82,7 @@ function New-ShieldPath([double]$k) {
     return $p
 }
 
-function Render-Size([int]$size) {
+function Render-Size([int]$size, $bgTop, $bgBottom) {
     $k = $size / $CanvasSize
     $bmp = New-Object System.Drawing.Bitmap $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -121,44 +132,49 @@ function Render-Size([int]$size) {
     return $bmp
 }
 
-# --- Render every frame, then pack into a single .ico ------------------------
-$sizes = 16, 20, 24, 32, 40, 48, 64, 128, 256
-$frames = @()
-foreach ($dim in $sizes) {
-    $bmp = Render-Size $dim
-    $ms = New-Object System.IO.MemoryStream
-    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
-    $frames += ,@{ Size = $dim; Bytes = $ms.ToArray() }
-    $ms.Dispose(); $bmp.Dispose()
-}
-
-New-Item -ItemType Directory -Force -Path (Split-Path -Parent $icoPath) | Out-Null
-$fs = [System.IO.File]::Create($icoPath)
-$bw = New-Object System.IO.BinaryWriter $fs
-try {
-    # ICONDIR
-    $bw.Write([uint16]0)                 # reserved
-    $bw.Write([uint16]1)                 # type: icon
-    $bw.Write([uint16]$frames.Count)     # image count
-
-    # ICONDIRENTRY table (16 bytes each). Image data starts after the table.
-    $offset = 6 + 16 * $frames.Count
-    foreach ($f in $frames) {
-        $dim = if ($f.Size -ge 256) { 0 } else { $f.Size }  # 0 means 256
-        $bw.Write([byte]$dim)            # width
-        $bw.Write([byte]$dim)            # height
-        $bw.Write([byte]0)               # palette count
-        $bw.Write([byte]0)               # reserved
-        $bw.Write([uint16]1)             # color planes
-        $bw.Write([uint16]32)            # bits per pixel
-        $bw.Write([uint32]$f.Bytes.Length)
-        $bw.Write([uint32]$offset)
-        $offset += $f.Bytes.Length
+# Render every frame at the given gradient, then pack them into a single .ico.
+function Write-Ico([string]$path, $bgTop, $bgBottom) {
+    $sizes = 16, 20, 24, 32, 40, 48, 64, 128, 256
+    $frames = @()
+    foreach ($dim in $sizes) {
+        $bmp = Render-Size $dim $bgTop $bgBottom
+        $ms = New-Object System.IO.MemoryStream
+        $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+        $frames += ,@{ Size = $dim; Bytes = $ms.ToArray() }
+        $ms.Dispose(); $bmp.Dispose()
     }
-    # PNG-encoded frames (supported by the Windows shell for all these sizes).
-    foreach ($f in $frames) { $bw.Write($f.Bytes) }
-} finally {
-    $bw.Dispose(); $fs.Dispose()
+
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
+    $fs = [System.IO.File]::Create($path)
+    $bw = New-Object System.IO.BinaryWriter $fs
+    try {
+        # ICONDIR
+        $bw.Write([uint16]0)                 # reserved
+        $bw.Write([uint16]1)                 # type: icon
+        $bw.Write([uint16]$frames.Count)     # image count
+
+        # ICONDIRENTRY table (16 bytes each). Image data starts after the table.
+        $offset = 6 + 16 * $frames.Count
+        foreach ($f in $frames) {
+            $dim = if ($f.Size -ge 256) { 0 } else { $f.Size }  # 0 means 256
+            $bw.Write([byte]$dim)            # width
+            $bw.Write([byte]$dim)            # height
+            $bw.Write([byte]0)               # palette count
+            $bw.Write([byte]0)               # reserved
+            $bw.Write([uint16]1)             # color planes
+            $bw.Write([uint16]32)            # bits per pixel
+            $bw.Write([uint32]$f.Bytes.Length)
+            $bw.Write([uint32]$offset)
+            $offset += $f.Bytes.Length
+        }
+        # PNG-encoded frames (supported by the Windows shell for all these sizes).
+        foreach ($f in $frames) { $bw.Write($f.Bytes) }
+    } finally {
+        $bw.Dispose(); $fs.Dispose()
+    }
+
+    Write-Host "Wrote $path ($($frames.Count) frames: $($sizes -join ', '))"
 }
 
-Write-Host "Wrote $icoPath ($($frames.Count) frames: $($sizes -join ', '))"
+Write-Ico $icoPath     $tealTop $tealBottom
+Write-Ico $icoGrayPath $grayTop $grayBottom

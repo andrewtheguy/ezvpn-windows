@@ -33,11 +33,15 @@ The Rust core + C FFI live in the `../ezvpn` repo (`src/ffi_windows.rs`,
   marshallable.
 - Icons: `assets\icon.svg` (the shield/keyhole glyph, shared with ezvpn-apple) is
   the source of truth. `scripts\render-icons.ps1` renders it to the committed
-  `src\Ezvpn.App\Assets\ezvpn.ico` (multi-size) via GDI+ — re-run it (needs
-  Windows PowerShell 5.1) only when the SVG changes; CI just uses the committed
-  `.ico`. It's the `.exe` icon (`<ApplicationIcon>`), the title-bar icon
-  (`AppWindow.SetIcon`), and the tray icon.
+  `src\Ezvpn.App\Assets\ezvpn.ico` (teal, multi-size) plus a gray
+  `ezvpn-gray.ico` via GDI+ — re-run it (needs Windows PowerShell 5.1) only when
+  the SVG changes; CI just uses the committed `.ico`s. The teal `ezvpn.ico` is
+  the `.exe` icon (`<ApplicationIcon>`) and the title-bar icon
+  (`AppWindow.SetIcon`); the tray shows `ezvpn-gray.ico` until the tunnel is
+  connected, then swaps to the teal one.
 - The system tray (`Services\TrayIcon.cs`) is hand-rolled on `Shell_NotifyIcon`
   (WinUI 3 has no tray API): it subclasses the window's WndProc for callbacks and
   uses a native `TrackPopupMenuEx` menu. Closing the window hides to the tray;
-  only the tray's Quit exits the process.
+  only the tray's Quit exits the process. `SetConnected(bool)` swaps between the
+  teal (connected) and gray (not-connected) icons; `MainWindow` drives it from
+  the active tunnel's connection state.
