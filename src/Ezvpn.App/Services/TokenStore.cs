@@ -14,6 +14,7 @@ public static class TokenStore
 {
     private const uint CRED_TYPE_GENERIC = 1;
     private const uint CRED_PERSIST_LOCAL_MACHINE = 2;
+    private const int ERROR_NOT_FOUND = 1168;
 
     private static string TargetFor(Guid id) => "ezvpn:" + id.ToString("N");
     private static string RelayTargetFor(Guid id) => "ezvpn-relay:" + id.ToString("N");
@@ -25,7 +26,7 @@ public static class TokenStore
     public static string? Load(Guid id) => Read(TargetFor(id));
 
     /// <summary>Delete the stored auth token for a profile (no-op if absent).</summary>
-    public static void Delete(Guid id) => CredDeleteW(TargetFor(id), CRED_TYPE_GENERIC, 0);
+    public static void Delete(Guid id) => DeleteTarget(TargetFor(id));
 
     /// <summary>Store (or overwrite) the optional relay token for a profile.</summary>
     public static void SaveRelay(Guid id, string token) => Write(RelayTargetFor(id), token);
@@ -34,7 +35,20 @@ public static class TokenStore
     public static string? LoadRelay(Guid id) => Read(RelayTargetFor(id));
 
     /// <summary>Delete the stored relay token for a profile (no-op if absent).</summary>
-    public static void DeleteRelay(Guid id) => CredDeleteW(RelayTargetFor(id), CRED_TYPE_GENERIC, 0);
+    public static void DeleteRelay(Guid id) => DeleteTarget(RelayTargetFor(id));
+
+    private static void DeleteTarget(string target)
+    {
+        if (!CredDeleteW(target, CRED_TYPE_GENERIC, 0))
+        {
+            var error = Marshal.GetLastWin32Error();
+            if (error == ERROR_NOT_FOUND)
+            {
+                return;
+            }
+            throw new InvalidOperationException($"CredDelete failed (error {error})");
+        }
+    }
 
     private static void Write(string target, string token)
     {
