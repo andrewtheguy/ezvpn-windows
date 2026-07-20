@@ -27,9 +27,9 @@
 
     <!-- Pinned ezvpn.dll release. Fill EzvpnDllZipSha256 with scripts\bump-dll.ps1
          once an ezvpn release that includes the build-windows-lib asset exists. -->
-    <EzvpnReleaseTag Condition="'$(EzvpnReleaseTag)' == ''">v0.0.27</EzvpnReleaseTag>
+    <EzvpnReleaseTag Condition="'$(EzvpnReleaseTag)' == ''">v0.0.29</EzvpnReleaseTag>
     <EzvpnDllZipUrl>https://github.com/flexaccessdev/ezvpn/releases/download/$(EzvpnReleaseTag)/ezvpn-windows.dll.zip</EzvpnDllZipUrl>
-    <EzvpnDllZipSha256>a6aaef0b470d9564bfc1d5fd95679d4f078417f40e9bc91c6106bef97eec31ea</EzvpnDllZipSha256>
+    <EzvpnDllZipSha256>1f0d12d2e2380efc9c229a8ba8ee95c07e2c7dc83ee5c4c06291e2fb1e67aee0</EzvpnDllZipSha256>
 
     <!-- Local core build used when EZVPN_LOCAL_DLL=1 (see ..\ezvpn\build-windows.ps1).
          In that mode ezvpn.dll is consumed straight from the sibling dist — it is

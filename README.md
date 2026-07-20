@@ -67,8 +67,8 @@ copying:
   (the Windows analog of `ezvpn-apple`'s `bump-xcframework.sh`):
 
   ```powershell
-  ./scripts/bump-dll.ps1             # latest release
-  ./scripts/bump-dll.ps1 v0.0.23     # or pin an explicit release
+  pwsh ./scripts/bump-dll.ps1             # latest release
+  pwsh ./scripts/bump-dll.ps1 v0.0.23     # or pin an explicit release
   ```
 
   The script is cross-platform — on Linux/macOS run it with PowerShell Core
