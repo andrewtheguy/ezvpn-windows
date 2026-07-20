@@ -68,6 +68,9 @@ public sealed class ClientStatus
     [JsonPropertyName("connection")]
     public string? Connection { get; set; }
 
+    [JsonPropertyName("custom_relays")]
+    public List<CustomRelayStatus> CustomRelays { get; set; } = new();
+
     [JsonPropertyName("bypass_addrs")]
     public List<string> BypassAddrs { get; set; } = new();
 
@@ -96,4 +99,17 @@ public sealed class ClientStatus
             return null;
         }
     }
+}
+
+public sealed class CustomRelayStatus
+{
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+
+    /// <summary>True/false when iroh has observed health; null while unavailable.</summary>
+    [JsonPropertyName("working")]
+    public bool? Working { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
 }
