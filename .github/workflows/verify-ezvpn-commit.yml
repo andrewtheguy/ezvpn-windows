@@ -1,0 +1,93 @@
+name: verify-ezvpn-commit
+
+# Build the .NET app against ezvpn.dll built from a pinned ezvpn *source commit*
+# (not a released ezvpn-windows.dll.zip). ezvpn is checked out as a sibling
+# directory and built with build-windows.ps1, then consumed through the existing
+# EZVPN_LOCAL_DLL local-build path in native/native.targets (which reads the
+# sibling ..\ezvpn\dist\windows\ezvpn.dll).
+#
+# This exists so a not-yet-released ezvpn change can be validated against this app
+# before cutting a release and bumping the pinned DLL with scripts\bump-dll.ps1.
+# The regular validate.yml / release.yml jobs still use the pinned release
+# download; this one tests the pinned commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ezvpn_ref:
+        description: "ezvpn git ref (commit SHA / branch / tag) to build against"
+        required: true
+        default: "dfa1b5e2916603f88f18bf56d2b8aec2191179f0"
+      ezvpn_repo:
+        description: "ezvpn repository (owner/name)"
+        required: true
+        default: "flexaccessdev/ezvpn"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # Link ezvpn.dll from the local core build (..\ezvpn\dist\windows) instead
+      # of the pinned release download. Read as an MSBuild property by
+      # native/native.targets, so scope it to the whole job.
+      EZVPN_LOCAL_DLL: "1"
+    steps:
+      - name: Checkout ezvpn-windows
+        uses: actions/checkout@v4
+        with:
+          path: ezvpn-windows
+
+      - name: Checkout ezvpn (pinned) as sibling
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.ezvpn_repo }}
+          ref: ${{ inputs.ezvpn_ref }}
+          path: ezvpn
+          # ezvpn is public today, so the default token works. If it becomes
+          # private, add a repo secret EZVPN_CHECKOUT_TOKEN (a PAT/fine-grained
+          # token with read access to ezvpn) and it will be used automatically.
+          token: ${{ secrets.EZVPN_CHECKOUT_TOKEN || github.token }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Show build environment
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+          dotnet --version
+          "ezvpn @ $(git -C ezvpn rev-parse HEAD)"
+
+      # Produces ezvpn\dist\windows\ezvpn.dll, which native.targets consumes
+      # directly from the sibling dist in EZVPN_LOCAL_DLL mode.
+      - name: Build ezvpn.dll from pinned ezvpn
+        working-directory: ezvpn
+        shell: pwsh
+        run: ./build-windows.ps1
+
+      - name: Build solution (against pinned core)
+        working-directory: ezvpn-windows
+        run: dotnet build ezvpn-windows.slnx -c Release
+
+      - name: Test
+        working-directory: ezvpn-windows
+        run: dotnet test tests/Ezvpn.Core.Tests/Ezvpn.Core.Tests.csproj -c Release --no-build
+
+      # Full integration check: publish requires both native DLLs to be present.
+      # EZVPN_LOCAL_DLL=1 stages the locally built ezvpn.dll from the sibling dist
+      # and wintun.dll is downloaded during staging, so a green publish proves the
+      # app integrates with the pinned ezvpn commit end to end.
+      - name: Publish app (self-contained, verifies local ezvpn.dll integration)
+        working-directory: ezvpn-windows
+        shell: pwsh
+        run: |
+          dotnet publish src/Ezvpn.App/Ezvpn.App.csproj -c Release -r win-x64 --self-contained -o publish
+          if (-not (Test-Path publish/ezvpn.dll)) { throw "ezvpn.dll missing from publish (local core build not staged)" }
+          if (-not (Test-Path publish/wintun.dll)) { throw "wintun.dll missing from publish" }
