@@ -17,7 +17,9 @@ public class ClientStatusTests
           "assigned_ip6":"fd00::2","network6":"fd00::1/128","gateway6":"fd00::1",
           "mtu":1280,"gso_negotiated":false,
           "routes":["10.0.0.1/32"],"routes6":["fd00::1/128"],
-          "connection":"Direct 1.2.3.4:52186 (rtt 1ms)","bypass_addrs":[]
+          "connection":"Direct 1.2.3.4:52186 (rtt 1ms)",
+          "custom_relays":[{"url":"https://relay.example/","working":true,"error":null}],
+          "bypass_addrs":[]
         }
         """;
 
@@ -31,6 +33,9 @@ public class ClientStatusTests
         Assert.Equal(42ul, status.ConnectedSinceSecs);
         Assert.Contains("10.0.0.1/32", status.Routes);
         Assert.Equal("Direct 1.2.3.4:52186 (rtt 1ms)", status.Connection);
+        Assert.Single(status.CustomRelays);
+        Assert.True(status.CustomRelays[0].Working);
+        Assert.Equal("https://relay.example/", status.CustomRelays[0].Url);
     }
 
     [Fact]
