@@ -24,8 +24,8 @@ public sealed partial class TunnelEditDialog : ContentDialog
         TokenBox.Password = token ?? "";
         RelayBox.Text = string.Join(", ", profile.RelayUrls);
         RelayTokenBox.Password = relayToken ?? "";
-        RoutesBox.Text = string.Join(Environment.NewLine, profile.Routes);
-        Routes6Box.Text = string.Join(Environment.NewLine, profile.Routes6);
+        RoutesBox.Text = string.Join(", ", profile.Routes);
+        Routes6Box.Text = string.Join(", ", profile.Routes6);
         AutoReconnectCheck.IsChecked = profile.AutoReconnect;
         MaxAttemptsBox.Value = profile.MaxReconnectAttempts ?? double.NaN;
         UpdateRelayTokenEnabled();

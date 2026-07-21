@@ -105,8 +105,12 @@ public static class TunnelValidation
     }
 
     /// <summary>
-    /// Parse a comma/newline/space-separated route list into trimmed, non-empty
-    /// entries — for turning an edit-form text box into a list.
+    /// Parse a comma-separated list (relays, routes, …) into trimmed, non-empty
+    /// entries — for turning an edit-form text box into a list. Comma is the only
+    /// separator; surrounding whitespace and newlines are trimmed off each entry.
+    /// This matches the mac/linux app's <c>splitCSV</c> exactly so a profile edited
+    /// on any platform parses identically (Windows used to also split on spaces and
+    /// newlines, which stacked comma-separated relays onto separate lines).
     /// </summary>
     public static List<string> SplitList(string? text)
     {
@@ -115,7 +119,7 @@ public static class TunnelValidation
             return new List<string>();
         }
         return text
-            .Split(new[] { ',', '\n', '\r', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+            .Split(',')
             .Select(s => s.Trim())
             .Where(s => s.Length > 0)
             .ToList();
