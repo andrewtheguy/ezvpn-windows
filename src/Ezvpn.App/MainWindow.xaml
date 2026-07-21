@@ -21,8 +21,12 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="ezvpn" Margin="16,16,16,8"
-                       Style="{ThemeResource TitleTextBlockStyle}" />
+            <StackPanel Grid.Row="0" Margin="16,16,16,8" Spacing="2">
+                <TextBlock Text="ezvpn" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock x:Name="VersionText"
+                           Style="{ThemeResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
 
             <ListView x:Name="TunnelList" Grid.Row="1"
                       ItemsSource="{Binding Tunnels}"

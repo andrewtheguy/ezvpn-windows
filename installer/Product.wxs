@@ -19,6 +19,12 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of ezvpn is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- The Package/@Version above (ProductVersion) is a build-timestamp value that
+         keeps MajorUpgrade monotonic; it is not user-friendly. Override the version
+         shown in Add/Remove Programs with the human-facing app version so it matches
+         what the app displays in its window and tray menu. -->
+    <Property Id="ARPDISPLAYVERSION" Value="$(var.DisplayVersion)" />
+
     <!-- Install wizard: Welcome -> License -> Install folder -> Ready ->
          Progress -> Finish. WixUI_InstallDir lets the user change the folder;
          WIXUI_INSTALLDIR names the directory it edits. -->

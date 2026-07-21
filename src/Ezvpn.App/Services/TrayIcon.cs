@@ -65,6 +65,7 @@ public sealed class TrayIcon : IDisposable
     private readonly IntPtr _hwnd;
     private readonly WndProcDelegate _wndProc; // kept alive; the OS holds a raw pointer.
     private readonly IntPtr _oldWndProc;
+    private readonly string? _versionLabel;
 
     private NOTIFYICONDATAW _data;
     private IntPtr _connectedIcon;
@@ -94,9 +95,14 @@ public sealed class TrayIcon : IDisposable
     /// Path to the (gray) .ico shown while not connected; the tray starts here.
     /// </param>
     /// <param name="tooltip">Hover tooltip (truncated to 127 chars by the shell).</param>
-    public TrayIcon(IntPtr hwnd, string connectedIconPath, string disconnectedIconPath, string tooltip)
+    /// <param name="versionLabel">
+    /// Optional version string shown as a disabled header at the top of the
+    /// context menu (e.g. "v0.1.0"). Omitted from the menu when null/empty.
+    /// </param>
+    public TrayIcon(IntPtr hwnd, string connectedIconPath, string disconnectedIconPath, string tooltip, string? versionLabel = null)
     {
         _hwnd = hwnd;
+        _versionLabel = versionLabel;
 
         _connectedIcon = LoadTrayIcon(connectedIconPath);
         try
@@ -212,6 +218,12 @@ public sealed class TrayIcon : IDisposable
         IntPtr menu = CreatePopupMenu();
         try
         {
+            if (!string.IsNullOrEmpty(_versionLabel))
+            {
+                // Non-interactive header (no command id) showing the app version.
+                AppendMenu(menu, MF_STRING | MF_GRAYED, UIntPtr.Zero, $"ezvpn {_versionLabel}");
+                AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
+            }
             AppendMenu(menu, MF_STRING, (UIntPtr)IdShow, "Show ezvpn");
             AppendMenu(menu, MF_SEPARATOR, UIntPtr.Zero, null);
             AppendMenu(menu, MF_STRING | (canConnect ? 0 : MF_GRAYED), (UIntPtr)IdConnect, "Connect");

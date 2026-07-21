@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
 
         Title = "ezvpn";
+        VersionText.Text = AppInfo.Version;
         _manager = new TunnelsManager(DispatcherQueue);
         RootGrid.DataContext = _manager;
 
@@ -74,7 +75,7 @@ public sealed partial class MainWindow : Window
     {
         try
         {
-            _tray = new TrayIcon(_hwnd, iconPath, grayIconPath, "ezvpn");
+            _tray = new TrayIcon(_hwnd, iconPath, grayIconPath, $"ezvpn {AppInfo.Version}", AppInfo.Version);
         }
         catch (Exception)
         {

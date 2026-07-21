@@ -11,13 +11,19 @@
          report a Language id ICE rejects; harmless for install. ICE80 no longer
          fires now that the package is x64. -->
     <SuppressIces>ICE03</SuppressIces>
-    <!-- ProductVersion is overridable from CI (e.g. from the release tag). -->
+    <!-- ProductVersion drives MSI upgrade comparison (MajorUpgrade), so CI sets it
+         to a monotonically increasing build-timestamp value. It is NOT what the
+         user sees. -->
     <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0.0</ProductVersion>
+    <!-- DisplayVersion is the human-facing version shown in Add/Remove Programs
+         (via ARPDISPLAYVERSION). Sourced from EzvpnVersion (Directory.Build.props)
+         so it matches the version shown inside the app. -->
+    <DisplayVersion Condition="'$(DisplayVersion)' == ''">$(EzvpnVersion)</DisplayVersion>
     <!-- Directory holding the published, self-contained Ezvpn.App plus the
          native DLLs (ezvpn.dll, wintun.dll). CI publishes there before building;
          locally it defaults to ../publish. -->
     <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildProjectDirectory)\..\publish</PublishDir>
-    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <DefineConstants>PublishDir=$(PublishDir);ProductVersion=$(ProductVersion);DisplayVersion=$(DisplayVersion)</DefineConstants>
   </PropertyGroup>
 
   <!-- WixUI dialog set (the install wizard) lives in the UI extension. -->
