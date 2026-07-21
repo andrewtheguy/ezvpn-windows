@@ -42,16 +42,16 @@ public sealed class ClientStatus
 
     public ulong? ConnectedSinceSecs => ULong("connected_since_secs");
 
-    public List<string> Routes => StrList("routes");
+    public IReadOnlyList<string> Routes => StrList("routes");
 
-    public List<string> Routes6 => StrList("routes6");
+    public IReadOnlyList<string> Routes6 => StrList("routes6");
 
     /// <summary>Live iroh path description (direct/relay, rtt), when connected.</summary>
     public string? Connection => Str("connection");
 
-    public List<string> BypassAddrs => StrList("bypass_addrs");
+    public IReadOnlyList<string> BypassAddrs => StrList("bypass_addrs");
 
-    public List<CustomRelayStatus> CustomRelays
+    public IReadOnlyList<CustomRelayStatus> CustomRelays
     {
         get
         {
