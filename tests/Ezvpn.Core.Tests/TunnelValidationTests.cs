@@ -48,11 +48,23 @@ public class TunnelValidationTests
     }
 
     [Fact]
-    public void SplitList_HandlesMixedSeparators()
+    public void SplitList_SplitsOnCommaOnlyAndTrims()
     {
-        var list = TunnelValidation.SplitList("10.0.0.0/8, 192.168.0.0/16\n172.16.0.0/12");
+        // Comma is the only separator; surrounding spaces/newlines are trimmed.
+        var list = TunnelValidation.SplitList("10.0.0.0/8, 192.168.0.0/16 ,\n172.16.0.0/12");
         Assert.Equal(new[] { "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12" }, list);
         Assert.Empty(TunnelValidation.SplitList(""));
         Assert.Empty(TunnelValidation.SplitList(null));
+        Assert.Empty(TunnelValidation.SplitList("  ,  , "));
+    }
+
+    [Fact]
+    public void SplitList_MatchesMacCsvSemantics()
+    {
+        // Mirrors ezvpn-apple's splitCSV test verbatim: comma-delimited, empty
+        // fields dropped, each entry trimmed of whitespace/newlines. Guarantees a
+        // profile's relay/route list parses identically on Windows and mac/linux.
+        var list = TunnelValidation.SplitList(" https://relay.one , ,\nhttps://relay.two ");
+        Assert.Equal(new[] { "https://relay.one", "https://relay.two" }, list);
     }
 }
